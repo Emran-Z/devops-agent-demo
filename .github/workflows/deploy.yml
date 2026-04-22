@@ -54,10 +54,10 @@ jobs:
               "BUCKET=${{ env.DEPLOY_BUCKET }}",
 
               "# Pull latest code from S3",
+              "rm -rf ${APP_DIR}/venv",
               "aws s3 sync s3://${BUCKET}/devops-agent-demo/app/ ${APP_DIR}/",
 
               "# Recreate venv to avoid stale symlinks",
-              "rm -rf ${APP_DIR}/venv",
               "python3 -m venv ${APP_DIR}/venv",
               "${APP_DIR}/venv/bin/pip install -q --upgrade pip",
               "${APP_DIR}/venv/bin/pip install -q -r ${APP_DIR}/requirements.txt",
