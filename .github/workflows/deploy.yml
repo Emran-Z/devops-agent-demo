@@ -19,7 +19,7 @@ env:
 jobs:
   deploy:
     name: Deploy app
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
