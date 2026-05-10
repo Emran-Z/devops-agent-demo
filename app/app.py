@@ -1,15 +1,6 @@
 """
-Inventory API — BUGGY version (introduced in commit that triggers the demo)
-
-BUG: Every call to POST /api/process appends the full request body AND a
-large pre-computed result list into a module-level list (_leak_storage).
-This list is never cleared, so RSS grows ~2-4 MB per request and the
-process exhausts the 1 GB available on the t3.micro within minutes under
-moderate load.
-
-The bug is intentionally obvious for demo purposes — it mirrors a real-world
-pattern where developers cache "hot" computation results without an eviction
-policy.
+Inventory API — HEALTHY version
+No memory leak. Deployed on EC2 t3.micro for the AWS DevOps Agent demo.
 """
 
 import os
@@ -27,12 +18,9 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# In-memory store (bounded)
+# In-memory store (bounded — last 1 000 items only)
 _MAX_ITEMS = 1_000
 _items: list[dict] = []
-
-# ⚠️  MEMORY LEAK — unbounded cache, never evicted
-_leak_storage: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +29,7 @@ _leak_storage: list[dict] = []
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "version": "1.1.0-buggy"})
+    return jsonify({"status": "ok", "version": "1.0.0-healthy"})
 
 
 @app.get("/metrics")
@@ -55,7 +43,6 @@ def metrics():
         "system_used_pct":     round(vm.percent, 2),
         "system_available_mb": round(vm.available / 1024 / 1024, 2),
         "items_in_store":      len(_items),
-        "leak_cache_size":     len(_leak_storage),
         "uptime_seconds":      round(time.time() - _START, 1),
     })
 
@@ -79,6 +66,7 @@ def add_item():
         "created_at": time.time(),
     }
     _items.append(item)
+    # Keep store bounded so memory stays flat
     if len(_items) > _MAX_ITEMS:
         _items.pop(0)
     log.info("item added id=%d total=%d", item["id"], len(_items))
@@ -88,34 +76,14 @@ def add_item():
 @app.post("/api/process")
 def process_data():
     """
-    Simulate a compute job.
-
-    BUG (line 84): result is cached in _leak_storage with no eviction.
-    Each entry is ~2–4 MB.  Under load the process runs out of memory.
+    Simulate a lightweight compute job.
+    HEALTHY: result is computed and returned; nothing is cached globally.
     """
     body  = request.get_json(force=True, silent=True) or {}
     value = int(body.get("value", 1))
-
-    # Compute result
+    # Compute result locally — no global accumulation
     result = sum(i * value for i in range(1_000))
-
-    # ⚠️  BUG: cache the result forever — _leak_storage grows without bound
-    _leak_storage.append({
-        "timestamp":  time.time(),
-        "request":    body,
-        "value":      value,
-        "result":     result,
-        # Padding simulates caching intermediate computation state (~2 MB/entry)
-        "_cache":     list(range(250_000)),
-    })
-
-    log.info(
-        "process_data ok  cache_entries=%d  rss_mb=%.1f",
-        len(_leak_storage),
-        psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024,
-    )
-    return jsonify({"status": "processed", "result": result,
-                    "cache_entries": len(_leak_storage)})
+    return jsonify({"status": "processed", "result": result})
 
 
 # ---------------------------------------------------------------------------
@@ -124,5 +92,5 @@ _START = time.time()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    log.info("Starting BUGGY app on port %d", port)
+    log.info("Starting HEALTHY app on port %d", port)
     app.run(host="0.0.0.0", port=port)
